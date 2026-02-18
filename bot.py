@@ -10,6 +10,7 @@ from aiogram.types import FSInputFile
 
 import yt_dlp
 
+LAST = {}
 # ========= CONFIG =========
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -115,7 +116,7 @@ async def handler(msg: types.Message):
 
     ydl_opts = {
 
-        'format': 'bestaudio[ext=m4a]/bestaudio/best',
+        'format': 'bestaudio[ext=m4a]',
 
         'outtmpl': f'downloads/{unique}.%(ext)s',
 
@@ -229,6 +230,7 @@ async def main():
 
 
 asyncio.run(main())
+
 
 
 
