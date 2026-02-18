@@ -1,7 +1,8 @@
+import os
 import asyncio
 import logging
-import os
 import uuid
+import time
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -9,105 +10,172 @@ from aiogram.types import FSInputFile
 
 import yt_dlp
 
-os.environ["PATH"] += os.pathsep + r"C:\\ffmpeg\\bin"
-
 BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
+
+DOWNLOAD = "downloads"
+FFMPEG_PATH = r"C:\ffmpeg\bin"
+
+os.makedirs(DOWNLOAD, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-DOWNLOAD = "downloads"
-os.makedirs(DOWNLOAD, exist_ok=True)
 
+# ===== ПРОГРЕСС БАР =====
+
+progress_data = {}
+
+
+def progress_hook(d):
+
+    if d['status'] == 'downloading':
+
+        total = d.get("total_bytes") or d.get("total_bytes_estimate")
+
+        downloaded = d.get("downloaded_bytes", 0)
+
+        if total:
+
+            percent = int(downloaded * 100 / total)
+
+            progress_data['percent'] = percent
+
+    if d['status'] == 'finished':
+
+        progress_data['percent'] = 100
+
+
+async def progress_updater(message, status_msg):
+
+    while True:
+
+        percent = progress_data.get("percent", 0)
+
+        bar = "▓" * (percent // 5) + "░" * (20 - percent // 5)
+
+        try:
+
+            await status_msg.edit_text(
+                f"⬇️ Загрузка\n\n[{bar}] {percent}%"
+            )
+        except:
+            pass
+
+        if percent >= 100:
+            break
+
+        await asyncio.sleep(1)
+
+
+# ===== START =====
 
 @dp.message(CommandStart())
 async def start(msg: types.Message):
-    await msg.answer("🎵 Отправь ссылку")
 
+    await msg.answer(
+        "🎵 Отправь ссылку\n\n⚡ PRO бот"
+    )
+
+
+# ===== MAIN =====
 
 @dp.message()
 async def handler(msg: types.Message):
 
     url = msg.text
 
-    status = await msg.answer("⏳ Загружаю")
+    status = await msg.answer("⏳ Подготовка...")
 
     unique = str(uuid.uuid4())
 
     filename = f"{DOWNLOAD}/{unique}.mp3"
-    thumb = None
+
+    progress_data.clear()
 
     ydl_opts = {
-    'format': 'bestaudio/best',
 
-    'outtmpl': f'{DOWNLOAD}/{unique}',
+        'format': 'bestaudio/best',
 
-    'ffmpeg_location': r'C:\\ffmpeg\\bin',
+        'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
 
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
-        'preferredquality': '320',
-    }],
+        'ffmpeg_location': FFMPEG_PATH,
 
-    'writethumbnail': True,
-}
+        'noplaylist': True,
 
+        'concurrent_fragment_downloads': 5,
 
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '320',
+        }],
+
+        'writethumbnail': True,
+
+        'progress_hooks': [progress_hook],
+
+        'quiet': True
+    }
 
     try:
 
-        await status.edit_text("📥 Скачиваю.")
-        await asyncio.sleep(0.5)
-        await status.edit_text("📥 Скачиваю..")
-        await asyncio.sleep(0.5)
-        await status.edit_text("📥 Скачиваю...")
+        progress_task = asyncio.create_task(
+            progress_updater(msg, status)
+        )
+
+        start_time = time.time()
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+
             info = ydl.extract_info(url, download=True)
+
+        await progress_task
 
         title = info.get("title", "Music")
         performer = info.get("uploader", "Unknown")
 
-        for f in os.listdir(DOWNLOAD):
-            if f.startswith(unique) and f.endswith(".jpg"):
-                thumb = f"{DOWNLOAD}/{f}"
+        thumb = None
 
-        await status.edit_text("📤 Отправляю")
+        for file in os.listdir(DOWNLOAD):
+
+            if file.startswith(unique) and file.endswith(".jpg"):
+
+                thumb = f"{DOWNLOAD}/{file}"
+
+        await status.edit_text("📤 Отправка...")
 
         audio = FSInputFile(filename)
 
         if thumb:
+
             await msg.answer_audio(
                 audio,
                 title=title,
                 performer=performer,
                 thumbnail=FSInputFile(thumb)
             )
+
         else:
+
             await msg.answer_audio(
                 audio,
                 title=title,
                 performer=performer
             )
 
-        # красивая анимация удаления
-        await status.edit_text("🧹 Удаляю ссылку.")
-        await asyncio.sleep(0.3)
-
-        await status.edit_text("🧹 Удаляю ссылку..")
-        await asyncio.sleep(0.3)
-
-        await status.edit_text("🧹 Удаляю ссылку...")
-        await asyncio.sleep(0.3)
+        # удаление ссылки
 
         await msg.delete()
 
-        await status.edit_text("✅ Готово")
+        speed = round(time.time() - start_time, 1)
 
-        await asyncio.sleep(1)
+        await status.edit_text(
+            f"✅ Готово за {speed} сек ⚡"
+        )
+
+        await asyncio.sleep(2)
 
         await status.delete()
 
@@ -123,7 +191,10 @@ async def handler(msg: types.Message):
         await status.edit_text("❌ Ошибка")
 
 
+# ===== RUN =====
+
 async def main():
+
     await dp.start_polling(bot)
 
 
