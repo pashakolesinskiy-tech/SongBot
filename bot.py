@@ -91,55 +91,24 @@ async def handler(msg: types.Message):
 
     status = await msg.answer("🔍 Проверка...")
 
-    # ========= CACHE =========
-
-    if url in CACHE:
-
-        await status.edit_text("⚡ Отправляю из кеша...")
-
-        file_id = CACHE[url]
-
-        await msg.answer_audio(file_id)
-
-        await msg.delete()
-
-        await status.delete()
-
-        return
-
-
-    unique = str(uuid.uuid4())
-
-    # ========= OPTIONS =========
-
     def hook(d):
 
-    if d['status'] == 'downloading':
+        if d['status'] == 'downloading':
 
-        percent = float(
-            d['_percent_str']
-            .replace('%','')
-            .strip()
-        )
+            percent = float(
+                d['_percent_str']
+                .replace('%', '')
+                .strip()
+            )
 
-        asyncio.create_task(
-            progress_bar(status, percent)
-        )
-
+            asyncio.create_task(
+                progress_bar(status, percent)
+            )
 
     ydl_opts = {
-
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
-
         'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
-
-        'writethumbnail': True,
-
-        'convert_thumbnails': 'jpg',
-
         'progress_hooks': [hook],
-
-        'quiet': True,
     }
 
 
@@ -241,4 +210,5 @@ async def main():
 
 
 asyncio.run(main())
+
 
