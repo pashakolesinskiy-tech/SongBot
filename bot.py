@@ -10,58 +10,78 @@ from aiogram.types import FSInputFile
 
 import yt_dlp
 
-logging.basicConfig(level=logging.INFO)
+# ========= CONFIG =========
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
 
 DOWNLOAD = "downloads"
 CACHE_FILE = "cache.json"
 
 os.makedirs(DOWNLOAD, exist_ok=True)
 
-# загрузка кеша
+logging.basicConfig(level=logging.INFO)
+
+bot = Bot(BOT_TOKEN)
+dp = Dispatcher()
+
+# ========= CACHE =========
+
 if os.path.exists(CACHE_FILE):
-    with open(CACHE_FILE, "r", encoding="utf8") as f:
+    with open(CACHE_FILE, "r") as f:
         CACHE = json.load(f)
 else:
     CACHE = {}
 
-
 def save_cache():
-    with open(CACHE_FILE, "w", encoding="utf8") as f:
+    with open(CACHE_FILE, "w") as f:
         json.dump(CACHE, f)
 
 
-# прогресс бар
-def progress_bar(percent):
-
-    bars = int(percent / 10)
-
-    return "▓" * bars + "░" * (10 - bars)
-
+# ========= START =========
 
 @dp.message(CommandStart())
 async def start(msg: types.Message):
 
-    await msg.answer("🎵 Отправь ссылку")
+    await msg.answer(
+        "🎵 Отправь ссылку\n\n"
+        "⚡ Быстро\n"
+        "🖼 С обложкой\n"
+        "🚀 Без ограничений"
+    )
 
+
+# ========= PROGRESS =========
+
+async def progress_bar(status, percent):
+
+    bars = int(percent / 10)
+
+    bar = "▓" * bars + "░" * (10 - bars)
+
+    await status.edit_text(
+        f"📥 Загрузка...\n\n"
+        f"{bar} {percent:.0f}%"
+    )
+
+
+# ========= HANDLER =========
 
 @dp.message()
 async def handler(msg: types.Message):
 
     url = msg.text
 
-    status = await msg.answer("⏳ Проверяю...")
+    status = await msg.answer("🔍 Проверка...")
 
-    # кеш проверка
+    # ========= CACHE =========
+
     if url in CACHE:
 
-        await status.edit_text("⚡ Мгновенная отправка")
+        await status.edit_text("⚡ Отправляю из кеша...")
 
-        await msg.answer_audio(CACHE[url])
+        file_id = CACHE[url]
+
+        await msg.answer_audio(file_id)
 
         await msg.delete()
 
@@ -69,106 +89,124 @@ async def handler(msg: types.Message):
 
         return
 
+
     unique = str(uuid.uuid4())
 
-    filename = f"{DOWNLOAD}/{unique}.m4a"
+    # ========= OPTIONS =========
 
-    last_percent = 0
-
-    # прогресс
-    async def progress(d):
-
-        nonlocal last_percent
+    def hook(d):
 
         if d['status'] == 'downloading':
 
-            percent = d.get('_percent_str', '0').replace('%','')
+            percent = float(
+                d['_percent_str']
+                .replace('%','')
+                .strip()
+            )
 
-            try:
-
-                percent = float(percent)
-
-            except:
-                percent = 0
-
-            if int(percent) != last_percent:
-
-                last_percent = int(percent)
-
-                bar = progress_bar(percent)
-
-                try:
-                    await status.edit_text(
-                        f"📥 Загрузка...\n\n[{bar}] {int(percent)}%"
-                    )
-                except:
-                    pass
+            asyncio.create_task(
+                progress_bar(status, percent)
+            )
 
 
     ydl_opts = {
 
-        'format': 'bestaudio',
+        'format': 'bestaudio[ext=m4a]/bestaudio/best',
 
         'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
 
-        'progress_hooks': [lambda d: asyncio.create_task(progress(d))],
+        'writethumbnail': True,
 
-        'quiet': True
+        'convert_thumbnails': 'jpg',
 
+        'progress_hooks': [hook],
+
+        'quiet': True,
     }
+
 
     try:
 
-        with yt_dlp.YoutubeDL({
-    'format': 'bestaudio[ext=m4a]/bestaudio/best',
-    'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
-    'writethumbnail': True,
-    'convert_thumbnails': 'jpg',
-    'postprocessors': [{
-        'key': 'EmbedThumbnail',
-    }],
-}) as ydl:
-    info = ydl.extract_info(url, download=True)
+        await status.edit_text("📥 Начинаю загрузку...")
 
-title = info.get("title", "Music")
-performer = info.get("uploader", "Unknown")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
-# ищем аудио файл
-audio_path = None
-thumb_path = None
+            info = ydl.extract_info(url, download=True)
 
-for f in os.listdir(DOWNLOAD):
-    if f.startswith(unique) and f.endswith((".m4a", ".webm", ".mp3")):
-        audio_path = f"{DOWNLOAD}/{f}"
-    if f.startswith(unique) and f.endswith(".jpg"):
-        thumb_path = f"{DOWNLOAD}/{f}"
 
-audio = FSInputFile(audio_path)
+        title = info.get("title", "Music")
+        performer = info.get("uploader", "Unknown")
 
-if thumb_path and os.path.exists(thumb_path):
-    thumb = FSInputFile(thumb_path)
+        audio_path = None
+        thumb_path = None
 
-    await msg.answer_audio(
-        audio=audio,
-        title=title,
-        performer=performer,
-        thumbnail=thumb
-    )
-else:
-    await msg.answer_audio(
-        audio=audio,
-        title=title,
-        performer=performer
-    )
 
-        # сохранить кеш
+        for f in os.listdir(DOWNLOAD):
+
+            if f.startswith(unique) and f.endswith((".m4a",".webm")):
+
+                audio_path = f"{DOWNLOAD}/{f}"
+
+            if f.startswith(unique) and f.endswith(".jpg"):
+
+                thumb_path = f"{DOWNLOAD}/{f}"
+
+
+        await status.edit_text("📤 Отправляю...")
+
+
+        audio = FSInputFile(audio_path)
+
+
+        if thumb_path:
+
+            thumb = FSInputFile(thumb_path)
+
+            sent = await msg.answer_audio(
+
+                audio=audio,
+                title=title,
+                performer=performer,
+                thumbnail=thumb
+
+            )
+
+        else:
+
+            sent = await msg.answer_audio(
+
+                audio=audio,
+                title=title,
+                performer=performer
+
+            )
+
+
+        # ========= SAVE CACHE =========
+
         CACHE[url] = sent.audio.file_id
 
         save_cache()
 
+
+        # ========= DELETE LINK =========
+
+        await status.edit_text("🧹 Удаляю ссылку...")
+
+        await asyncio.sleep(1)
+
         await msg.delete()
 
         await status.delete()
+
+
+        # ========= CLEAN =========
+
+        os.remove(audio_path)
+
+        if thumb_path:
+            os.remove(thumb_path)
+
 
     except Exception as e:
 
@@ -177,10 +215,11 @@ else:
         await status.edit_text("❌ Ошибка")
 
 
+# ========= MAIN =========
+
 async def main():
 
     await dp.start_polling(bot)
-
 
 
 asyncio.run(main())
