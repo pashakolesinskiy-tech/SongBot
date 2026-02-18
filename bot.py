@@ -85,11 +85,19 @@ async def progress_bar(status, percent):
 # ========= HANDLER =========
 
 @dp.message()
+@dp.message()
 async def handler(msg: types.Message):
+    unique = str(uuid.uuid4())
+
+    audio_path = None
+    thumb_path = None
 
     url = msg.text
 
     status = await msg.answer("🔍 Проверка...")
+
+    # ✅ СОЗДАЕМ unique ЗДЕСЬ
+    unique = str(uuid.uuid4())
 
     def hook(d):
 
@@ -106,10 +114,21 @@ async def handler(msg: types.Message):
             )
 
     ydl_opts = {
+
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
-        'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
+
+        'outtmpl': f'downloads/{unique}.%(ext)s',
+
         'progress_hooks': [hook],
+
+        'writethumbnail': True,
+
+        'convert_thumbnails': 'jpg',
+
+        'quiet': True,
+
     }
+
 
 
     try:
@@ -210,5 +229,6 @@ async def main():
 
 
 asyncio.run(main())
+
 
 
