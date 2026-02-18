@@ -9,7 +9,10 @@ from aiogram.types import FSInputFile
 
 import yt_dlp
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN not found!")
 
 logging.basicConfig(level=logging.INFO)
 
