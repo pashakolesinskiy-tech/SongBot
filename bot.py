@@ -141,7 +141,7 @@ def download_audio(query: str) -> tuple[Path | None, dict | None]:
         'quiet': True,
         'no_warnings': True,
         'writethumbnail': True,
-        'ffmpeg_location': str(Path(FFMPEG_PATH).parent),
+        'ffmpeg_location': '/usr/bin/',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -183,20 +183,8 @@ async def cmd_start(message: Message):
 
 @dp.message()
 async def handle_music_request(message: Message):
-    query = message.text.strip()
-    if not query:
-        return
-
-    if query in CACHE:
-        try:
-            await message.answer_audio(audio=CACHE[query])
-            await message.delete()
-            return
-        except Exception:
-            logger.warning("Cached file_id is invalid → will re-download")
-            del CACHE[query]
-
-    status = await message.answer("🔎 Ищу музыку...")
+    ...
+    thumb_path = None   # ← добавь здесь
 
     try:
         file_path, info = await asyncio.to_thread(download_audio, query)
@@ -204,56 +192,28 @@ async def handle_music_request(message: Message):
             await status.edit_text("😔 Не удалось найти или скачать трек")
             return
 
-        # Сжатие, если нужно
-        size = file_path.stat().st_size
-        if size > MAX_TELEGRAM_SIZE:
-            await status.edit_text("📦 Файл слишком большой — сжимаю...")
-            compressed = compress_audio(file_path)
-            if compressed:
-                file_path = Path(compressed)
-            else:
-                await status.edit_text("❌ Не удалось сжать до <50 МБ")
-                file_path.unlink(missing_ok=True)
-                return
+        # ... сжатие ...
 
-        # Thumbnail
+        # Thumbnail — только если файл существует
         thumb_path = None
-        for ext in ('.jpg', '.webp', '.png'):
-            candidate = file_path.with_suffix(ext)
-            if candidate.is_file():
-                thumb_path = candidate
-                break
+        if file_path.exists():
+            for ext in ('.jpg', '.webp', '.png'):
+                candidate = file_path.with_suffix(ext)
+                if candidate.is_file():
+                    thumb_path = candidate
+                    break
 
-        artist, title = extract_artist_and_title(info)
-
-        audio = FSInputFile(file_path, filename=f"{title}.mp3")
-        thumb = FSInputFile(thumb_path) if thumb_path else None
-
-        sent = await message.answer_audio(
-            audio=audio,
-            title=title,
-            performer=artist,
-            thumbnail=thumb,
-            supports_streaming=True
-        )
-
-        CACHE[query] = sent.audio.file_id
-
-        # Удаляем запрос пользователя
-        try:
-            await message.delete()
-        except Exception:
-            pass
+        # ... остальной код ...
 
     except Exception as e:
-        logger.exception("Critical error in download handler")
-        await status.edit_text("💥 Произошла ошибка при обработке")
-
+        logger.exception("Ошибка в обработке")
+        await status.edit_text("💥 Произошла ошибка")
+    
     finally:
         # Уборка
-        if 'file_path' in locals() and file_path and file_path.is_file():
+        if 'file_path' in locals() and file_path and file_path.exists():
             file_path.unlink(missing_ok=True)
-        if thumb_path and thumb_path.is_file():
+        if thumb_path and thumb_path.exists():
             thumb_path.unlink(missing_ok=True)
         await status.delete()
 
@@ -276,4 +236,5 @@ if __name__ == "__main__":
         logger.info("Бот остановлен пользователем (Ctrl+C)")
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске бота: {e}", exc_info=True)
+
 
