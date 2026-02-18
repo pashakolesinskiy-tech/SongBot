@@ -15,6 +15,16 @@ import imageio_ffmpeg
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 FFMPEG_DIR = os.path.dirname(FFMPEG_PATH)
 
+# Логируем пути FFmpeg для диагностики
+logging.info(f"=== FFmpeg Diagnostic ===")
+logging.info(f"FFMPEG_PATH: {FFMPEG_PATH}")
+logging.info(f"FFMPEG_DIR: {FFMPEG_DIR}")
+logging.info(f"ffmpeg exists: {os.path.exists(FFMPEG_PATH)}")
+ffprobe_path = os.path.join(FFMPEG_DIR, 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe')
+logging.info(f"ffprobe path: {ffprobe_path}")
+logging.info(f"ffprobe exists: {os.path.exists(ffprobe_path)}")
+logging.info(f"========================")
+
 def is_url(text: str) -> bool:
     """Проверяет, является ли текст URL-ссылкой."""
     return text.startswith(('http://', 'https://', 'www.'))
