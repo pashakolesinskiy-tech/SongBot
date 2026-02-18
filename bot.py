@@ -85,8 +85,7 @@ logging.basicConfig(level=logging.INFO)
 # Ensure the music directory exists
 os.makedirs('music', exist_ok=True)
 
-BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
-# os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     sys.exit("Error: BOT_TOKEN environment variable is not set.")
 
