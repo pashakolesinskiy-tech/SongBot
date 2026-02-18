@@ -116,7 +116,7 @@ async def handler(msg: types.Message):
 
     ydl_opts = {
 
-        'format': 'bestaudio[ext=m4a]',
+        'format': 'bestaudio[abr<=128][filesize<50M]/bestaudio',
 
         'outtmpl': f'downloads/{unique}.%(ext)s',
 
@@ -230,6 +230,7 @@ async def main():
 
 
 asyncio.run(main())
+
 
 
 
