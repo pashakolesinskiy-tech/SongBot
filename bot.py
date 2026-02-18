@@ -44,8 +44,6 @@ async def handler(msg: types.Message):
 
     'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
 
-    'ffmpeg_location': r'C:\\ffmpeg\\bin\\ffmpeg.exe',
-
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
         'preferredcodec': 'mp3',
