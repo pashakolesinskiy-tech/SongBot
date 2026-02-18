@@ -259,13 +259,21 @@ async def handle_music_request(message: Message):
 
 
 async def main():
+    # Удаляем старый вебхук и пропускаем накопившиеся обновления
     await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Bot started → polling")
-    await dp.start_polling(bot, allowed_updates=types.AllowedUpdates.MESSAGE)
+    
+    logger.info("Бот успешно запущен → начинаем опрос (polling)")
+    
+    # Самый простой и рекомендуемый вариант для aiogram 3.x
+    # allowed_updates больше не нужен — aiogram сам определяет нужные типы обновлений
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("Бот остановлен пользователем (Ctrl+C)")
+    except Exception as e:
+        logger.error(f"Критическая ошибка при запуске бота: {e}", exc_info=True)
+
