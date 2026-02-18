@@ -119,21 +119,47 @@ async def handler(msg: types.Message):
 
     try:
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL({
+    'format': 'bestaudio[ext=m4a]/bestaudio/best',
+    'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
+    'writethumbnail': True,
+    'convert_thumbnails': 'jpg',
+    'postprocessors': [{
+        'key': 'EmbedThumbnail',
+    }],
+}) as ydl:
+    info = ydl.extract_info(url, download=True)
 
-            info = ydl.extract_info(url, download=True)
+title = info.get("title", "Music")
+performer = info.get("uploader", "Unknown")
 
-            file = ydl.prepare_filename(info)
+# ищем аудио файл
+audio_path = None
+thumb_path = None
 
-        await status.edit_text("📤 Отправляю...")
+for f in os.listdir(DOWNLOAD):
+    if f.startswith(unique) and f.endswith((".m4a", ".webm", ".mp3")):
+        audio_path = f"{DOWNLOAD}/{f}"
+    if f.startswith(unique) and f.endswith(".jpg"):
+        thumb_path = f"{DOWNLOAD}/{f}"
 
-        audio = FSInputFile(file)
+audio = FSInputFile(audio_path)
 
-        sent = await msg.answer_audio(
-            audio,
-            title=info.get("title"),
-            performer=info.get("uploader")
-        )
+if thumb_path and os.path.exists(thumb_path):
+    thumb = FSInputFile(thumb_path)
+
+    await msg.answer_audio(
+        audio=audio,
+        title=title,
+        performer=performer,
+        thumbnail=thumb
+    )
+else:
+    await msg.answer_audio(
+        audio=audio,
+        title=title,
+        performer=performer
+    )
 
         # сохранить кеш
         CACHE[url] = sent.audio.file_id
@@ -154,6 +180,7 @@ async def handler(msg: types.Message):
 async def main():
 
     await dp.start_polling(bot)
+
 
 
 asyncio.run(main())
