@@ -11,7 +11,7 @@ import yt_dlp
 
 os.environ["PATH"] += os.pathsep + r"C:\\ffmpeg\\bin"
 
-BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss`"
+BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -42,9 +42,9 @@ async def handler(msg: types.Message):
     ydl_opts = {
     'format': 'bestaudio/best',
 
-    'outtmpl': f'{DOWNLOAD}/{unique}',
+    'outtmpl': f'{DOWNLOAD}/{unique}.%(ext)s',
 
-    'ffmpeg_location': r'C:\\ffmpeg\\bin',
+    'ffmpeg_location': r'C:\\ffmpeg\\bin\\ffmpeg.exe',
 
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
@@ -54,6 +54,7 @@ async def handler(msg: types.Message):
 
     'writethumbnail': True,
 }
+
 
 
 
