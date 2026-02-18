@@ -149,6 +149,10 @@ async def download_music(message: Message):
     if query in CACHE:
         try:
             await message.answer_audio(CACHE[query])
+            try:
+                await message.delete()
+            except Exception as e:
+                logging.warning(f"Could not delete user message: {e}")
             return
         except Exception as e:
             logging.warning(f"Could not send audio from cache: {e}. Re-downloading.")
@@ -242,6 +246,11 @@ async def download_music(message: Message):
         )
         # Cache the file_id for future requests
         CACHE[query] = sent_message.audio.file_id
+        # Удаляем сообщение пользователя после успешной отправки
+        try:
+            await message.delete()
+        except Exception as e:
+            logging.warning(f"Could not delete user message: {e}")
     except Exception as e:
         logging.error(f"Failed to send audio: {e}")
         await status_message.edit_text("❌ Произошла ошибка при отправке аудио.")
