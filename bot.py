@@ -13,7 +13,7 @@ import yt_dlp
 BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
 
 DOWNLOAD = "downloads"
-FFMPEG_PATH = r"C:\ffmpeg\bin"
+FFMPEG_PATH = r"C:\\ffmpeg\\bin"
 
 os.makedirs(DOWNLOAD, exist_ok=True)
 
