@@ -9,8 +9,6 @@ from aiogram.types import FSInputFile
 
 import yt_dlp
 
-os.environ["PATH"] += os.pathsep + r"C:\\ffmpeg\\bin"
-
 BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
 
 logging.basicConfig(level=logging.INFO)
