@@ -54,14 +54,32 @@ async def start(msg: types.Message):
 
 async def progress_bar(status, percent):
 
-    bars = int(percent / 10)
+   LAST = {}
+
+async def progress_bar(status, percent):
+
+    message_id = status.message_id
+
+    percent_int = int(percent)
+
+    if LAST.get(message_id) == percent_int:
+        return
+
+    LAST[message_id] = percent_int
+
+    bars = percent_int // 10
 
     bar = "▓" * bars + "░" * (10 - bars)
 
-    await status.edit_text(
-        f"📥 Загрузка...\n\n"
-        f"{bar} {percent:.0f}%"
-    )
+    try:
+
+        await status.edit_text(
+            f"📥 Загрузка...\n\n"
+            f"{bar} {percent_int}%"
+        )
+
+    except:
+        pass
 
 
 # ========= HANDLER =========
@@ -96,17 +114,17 @@ async def handler(msg: types.Message):
 
     def hook(d):
 
-        if d['status'] == 'downloading':
+    if d['status'] == 'downloading':
 
-            percent = float(
-                d['_percent_str']
-                .replace('%','')
-                .strip()
-            )
+        percent = float(
+            d['_percent_str']
+            .replace('%','')
+            .strip()
+        )
 
-            asyncio.create_task(
-                progress_bar(status, percent)
-            )
+        asyncio.create_task(
+            progress_bar(status, percent)
+        )
 
 
     ydl_opts = {
@@ -223,3 +241,4 @@ async def main():
 
 
 asyncio.run(main())
+
