@@ -9,7 +9,9 @@ from aiogram.types import FSInputFile
 
 import yt_dlp
 
-BOT_TOKEN = "YOUR_TOKEN"
+os.environ["PATH"] += os.pathsep + r"C:\\ffmpeg\\bin"
+
+BOT_TOKEN = "8409897167:AAHC4RqLJHVb_qk-ouHmFu3gTuFeWfKtJss"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,16 +40,22 @@ async def handler(msg: types.Message):
     thumb = None
 
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': f'{DOWNLOAD}/{unique}',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '320'
-        }],
-        'writethumbnail': True,
-        'quiet': True
-    }
+    'format': 'bestaudio/best',
+
+    'outtmpl': f'{DOWNLOAD}/{unique}',
+
+    'ffmpeg_location': r'C:\\ffmpeg\\bin',
+
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'mp3',
+        'preferredquality': '320',
+    }],
+
+    'writethumbnail': True,
+}
+
+
 
     try:
 
