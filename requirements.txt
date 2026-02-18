@@ -1,3 +1,2 @@
-aiogram==3.7.0
+aiogram
 yt-dlp
-ffmpeg-python
