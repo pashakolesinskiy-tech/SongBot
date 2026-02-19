@@ -189,46 +189,80 @@ async def handle_music_request(message: Message):
 
     status = None  # Инициализация для безопасности
     thumb_path = None  # Инициализация для безопасности
+    file_path = None   # Добавляем для безопасности в finally
 
     if query in CACHE:
         try:
+            if status:
+                await status.edit_text("📤 Отправляю из кэша...")
             await message.answer_audio(CACHE[query])
             await message.delete()
+            if status:
+                await status.delete()
             return
         except Exception:
             logger.warning("Cached file_id is invalid → will re-download")
             del CACHE[query]
 
-    status = await message.answer("🔎 Ищу музыку...")
+    status = await message.answer("🔎 Поиск трека...")
 
     try:
+        # Шаг: Поиск и скачивание
+        await status.edit_text("📥 Скачивание аудио...")
         file_path, info = await asyncio.to_thread(download_audio, query)
         if not file_path or not info:
-            if status:
-                await status.edit_text("😔 Не удалось найти или скачать трек")
-            return
+            await status.edit_text("😔 Не удалось найти или скачать трек")
+            return  # Не удаляем статус в случае ошибки
 
-        # Сжатие, если нужно
+        # Шаг: Проверка размера
+        await status.edit_text("🔍 Проверка размера файла...")
         size = file_path.stat().st_size
+
         if size > MAX_TELEGRAM_SIZE:
-            if status:
-                await status.edit_text("📦 Файл слишком большой — сжимаю...")
-            compressed = compress_audio(file_path)
+            await status.edit_text("📦 Файл слишком большой — пытаюсь сжать...")
+            compressed = compress_audio(file_path, target_size_bytes=MAX_TELEGRAM_SIZE - 5 * 1024 * 1024)  # Цель <45MB для запаса
             if compressed:
                 file_path = Path(compressed)
+                size = file_path.stat().st_size
             else:
-                if status:
-                    await status.edit_text("❌ Не удалось сжать до <50 МБ")
-                file_path.unlink(missing_ok=True)
+                # Не удалось сжать — разбиваем на части
+                await status.edit_text("❗ Сжатие не помогло — разбиваю на части...")
+                parts = split_audio(file_path)  # Новая функция для разбиения (определить ниже)
+                if not parts:
+                    await status.edit_text("❌ Не удалось разбить файл. Попробуйте другой запрос.")
+                    return  # Оставляем статус
+
+                # Отправляем части
+                await status.edit_text("📤 Отправляю части...")
+                artist, title = extract_artist_and_title(info)
+                for i, part_path in enumerate(parts, 1):
+                    audio_part = FSInputFile(part_path, filename=f"{title} (Часть {i}).mp3")
+                    await message.answer_audio(
+                        audio=audio_part,
+                        title=f"{title} (Часть {i})",
+                        performer=artist,
+                    )
+                    part_path.unlink(missing_ok=True)  # Удаляем часть после отправки
+
+                # Успех — удаляем запрос пользователя
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+
+                await status.delete()  # Удаляем статус только при успехе
                 return
 
-        # Thumbnail
+        # Шаг: Поиск thumbnail
+        await status.edit_text("🖼️ Поиск обложки...")
         for ext in ('.jpg', '.webp', '.png'):
             candidate = file_path.with_suffix(ext)
             if candidate.is_file():
                 thumb_path = candidate
                 break
 
+        # Шаг: Отправка
+        await status.edit_text("📤 Отправляю аудио...")
         artist, title = extract_artist_and_title(info)
 
         audio = FSInputFile(file_path, filename=f"{title}.mp3")
@@ -244,7 +278,7 @@ async def handle_music_request(message: Message):
 
         CACHE[query] = sent.audio.file_id
 
-        # Удаляем запрос пользователя
+        # Успех — удаляем запрос пользователя
         try:
             await message.delete()
         except Exception:
@@ -253,16 +287,62 @@ async def handle_music_request(message: Message):
     except Exception as e:
         logger.exception("Critical error in download handler")
         if status:
-            await status.edit_text("💥 Произошла ошибка при обработке")
+            await status.edit_text("💥 Произошла ошибка при обработке. Попробуйте позже.")
+
+        return  # Не удаляем статус в случае ошибки
 
     finally:
-        # Уборка
-        if 'file_path' in locals() and file_path and file_path.is_file():
+        # Уборка файлов (только если успех, но файлы чистим всегда)
+        if file_path and file_path.is_file():
             file_path.unlink(missing_ok=True)
-        if 'thumb_path' in locals() and thumb_path and thumb_path.is_file():
+        if thumb_path and thumb_path.is_file():
             thumb_path.unlink(missing_ok=True)
-        if status:
-            await status.delete()
+        # Статус удаляем только в try (при успехе), здесь не трогаем
+
+# Новая функция для разбиения аудио на части (добавьте в код)
+def split_audio(input_path: Path, max_size_bytes: int = MAX_TELEGRAM_SIZE - 1 * 1024 * 1024) -> list[Path]:
+    """Разбивает MP3 на части < max_size_bytes с помощью ffmpeg."""
+    parts = []
+    duration = get_duration(input_path)
+    if not duration:
+        logger.warning("Cannot split: duration unknown")
+        return []
+
+    file_size = input_path.stat().st_size
+    if file_size <= max_size_bytes:
+        return [input_path]  # Не нужно разбивать
+
+    # Примерно вычисляем кол-во частей
+    num_parts = int(file_size / max_size_bytes) + 1
+    part_duration = duration / num_parts
+
+    base_name = input_path.stem
+    for i in range(num_parts):
+        part_path = input_path.with_name(f"{base_name}_part{i+1}.mp3")
+        start_time = i * part_duration
+        end_time = min((i+1) * part_duration, duration)
+
+        try:
+            subprocess.run([
+                FFMPEG_PATH, '-y', '-i', str(input_path),
+                '-ss', str(start_time), '-t', str(end_time - start_time),
+                '-c', 'copy',  # Копируем без перекодирования
+                str(part_path)
+            ], check=True, capture_output=True)
+
+            if part_path.stat().st_size > max_size_bytes:
+                logger.warning(f"Part {i+1} still too big — skipping")
+                part_path.unlink(missing_ok=True)
+                continue
+
+            parts.append(part_path)
+        except Exception as e:
+            logger.error(f"Split failed for part {i+1}: {e}")
+            if part_path.exists():
+                part_path.unlink(missing_ok=True)
+
+    input_path.unlink(missing_ok=True)  # Удаляем оригинал
+    return parts
 
 async def main():
     # Удаляем старый вебхук и пропускаем накопившиеся обновления
