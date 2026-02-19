@@ -7,7 +7,6 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import Message, FSInputFile
 import yt_dlp
-import imageio_ffmpeg
 import subprocess
 
 # ────────────────────────────────────────────────
@@ -25,7 +24,8 @@ logger = logging.getLogger(__name__)
 #  Пути и константы
 # ────────────────────────────────────────────────
 
-FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+FFMPEG_PATH = '/usr/bin/ffmpeg'
+FFPROBE_PATH = '/usr/bin/ffprobe'
 MUSIC_DIR = Path("music")
 MUSIC_DIR.mkdir(exist_ok=True)
 
@@ -51,7 +51,6 @@ def is_url(text: str) -> bool:
     text = text.strip()
     return text.startswith(('http://', 'https://', 'www.'))
 
-
 def extract_artist_and_title(info: dict) -> tuple[str, str]:
     title = info.get('title', 'Unknown Title').strip()
     artist = (
@@ -69,18 +68,16 @@ def extract_artist_and_title(info: dict) -> tuple[str, str]:
 
     return artist, title
 
-
 def get_duration(file_path: str | Path) -> float | None:
     file_path = str(file_path)
-    ffprobe = str(Path(FFMPEG_PATH).parent / ('ffprobe.exe' if sys.platform == 'win32' else 'ffprobe'))
 
-    if not os.path.isfile(ffprobe):
+    if not os.path.isfile(FFPROBE_PATH):
         logger.warning("ffprobe not found → duration detection disabled")
         return None
 
     try:
         result = subprocess.run(
-            [ffprobe, '-v', 'quiet', '-show_entries', 'format=duration',
+            [FFPROBE_PATH, '-v', 'quiet', '-show_entries', 'format=duration',
              '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
             capture_output=True, text=True, timeout=10
         )
@@ -90,7 +87,6 @@ def get_duration(file_path: str | Path) -> float | None:
     except Exception as e:
         logger.warning(f"ffprobe failed: {e}")
         return None
-
 
 def compress_audio(input_path: str | Path, target_size_bytes: int = TARGET_SIZE_AFTER_COMPRESS) -> str | None:
     input_path = Path(input_path)
@@ -118,7 +114,7 @@ def compress_audio(input_path: str | Path, target_size_bytes: int = TARGET_SIZE_
         ], check=True, capture_output=True)
 
         new_size = output_path.stat().st_size
-        if new_size > target_size_bytes + 1_000_000:  # допуск ~1MB
+        if new_size > target_size_bytes + 1_000_000:  # допуск \~1MB
             logger.warning(f"Compression result still too big: {new_size / 1024**2:.1f} MB")
             output_path.unlink(missing_ok=True)
             return None
@@ -133,6 +129,49 @@ def compress_audio(input_path: str | Path, target_size_bytes: int = TARGET_SIZE_
         output_path.unlink(missing_ok=True)
         return None
 
+def split_audio(input_path: Path, max_size_bytes: int = MAX_TELEGRAM_SIZE - 1 * 1024 * 1024) -> list[Path]:
+    """Разбивает MP3 на части < max_size_bytes с помощью ffmpeg."""
+    parts = []
+    duration = get_duration(input_path)
+    if not duration:
+        logger.warning("Cannot split: duration unknown")
+        return []
+
+    file_size = input_path.stat().st_size
+    if file_size <= max_size_bytes:
+        return [input_path]  # Не нужно разбивать
+
+    # Примерно вычисляем кол-во частей
+    num_parts = int(file_size / max_size_bytes) + 1
+    part_duration = duration / num_parts
+
+    base_name = input_path.stem
+    for i in range(num_parts):
+        part_path = input_path.with_name(f"{base_name}_part{i+1}.mp3")
+        start_time = i * part_duration
+        end_time = min((i+1) * part_duration, duration)
+
+        try:
+            subprocess.run([
+                FFMPEG_PATH, '-y', '-i', str(input_path),
+                '-ss', str(start_time), '-t', str(end_time - start_time),
+                '-c', 'copy',  # Копируем без перекодирования
+                str(part_path)
+            ], check=True, capture_output=True)
+
+            if part_path.stat().st_size > max_size_bytes:
+                logger.warning(f"Part {i+1} still too big — skipping")
+                part_path.unlink(missing_ok=True)
+                continue
+
+            parts.append(part_path)
+        except Exception as e:
+            logger.error(f"Split failed for part {i+1}: {e}")
+            if part_path.exists():
+                part_path.unlink(missing_ok=True)
+
+    input_path.unlink(missing_ok=True)  # Удаляем оригинал
+    return parts
 
 def download_audio(query: str) -> tuple[Path | None, dict | None]:
     ydl_opts = {
@@ -175,11 +214,9 @@ def download_audio(query: str) -> tuple[Path | None, dict | None]:
             logger.error(f"yt-dlp error for '{query}': {e}", exc_info=True)
             return None, None
 
-
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     await message.answer("🎵 Отправь название трека или ссылку (YouTube, SoundCloud и др.)")
-
 
 @dp.message()
 async def handle_music_request(message: Message):
@@ -193,12 +230,8 @@ async def handle_music_request(message: Message):
 
     if query in CACHE:
         try:
-            if status:
-                await status.edit_text("📤 Отправляю из кэша...")
             await message.answer_audio(CACHE[query])
             await message.delete()
-            if status:
-                await status.delete()
             return
         except Exception:
             logger.warning("Cached file_id is invalid → will re-download")
@@ -227,7 +260,7 @@ async def handle_music_request(message: Message):
             else:
                 # Не удалось сжать — разбиваем на части
                 await status.edit_text("❗ Сжатие не помогло — разбиваю на части...")
-                parts = split_audio(file_path)  # Новая функция для разбиения (определить ниже)
+                parts = split_audio(file_path)
                 if not parts:
                     await status.edit_text("❌ Не удалось разбить файл. Попробуйте другой запрос.")
                     return  # Оставляем статус
@@ -284,6 +317,8 @@ async def handle_music_request(message: Message):
         except Exception:
             pass
 
+        await status.delete()  # Удаляем статус только при успехе
+
     except Exception as e:
         logger.exception("Critical error in download handler")
         if status:
@@ -299,51 +334,6 @@ async def handle_music_request(message: Message):
             thumb_path.unlink(missing_ok=True)
         # Статус удаляем только в try (при успехе), здесь не трогаем
 
-# Новая функция для разбиения аудио на части (добавьте в код)
-def split_audio(input_path: Path, max_size_bytes: int = MAX_TELEGRAM_SIZE - 1 * 1024 * 1024) -> list[Path]:
-    """Разбивает MP3 на части < max_size_bytes с помощью ffmpeg."""
-    parts = []
-    duration = get_duration(input_path)
-    if not duration:
-        logger.warning("Cannot split: duration unknown")
-        return []
-
-    file_size = input_path.stat().st_size
-    if file_size <= max_size_bytes:
-        return [input_path]  # Не нужно разбивать
-
-    # Примерно вычисляем кол-во частей
-    num_parts = int(file_size / max_size_bytes) + 1
-    part_duration = duration / num_parts
-
-    base_name = input_path.stem
-    for i in range(num_parts):
-        part_path = input_path.with_name(f"{base_name}_part{i+1}.mp3")
-        start_time = i * part_duration
-        end_time = min((i+1) * part_duration, duration)
-
-        try:
-            subprocess.run([
-                FFMPEG_PATH, '-y', '-i', str(input_path),
-                '-ss', str(start_time), '-t', str(end_time - start_time),
-                '-c', 'copy',  # Копируем без перекодирования
-                str(part_path)
-            ], check=True, capture_output=True)
-
-            if part_path.stat().st_size > max_size_bytes:
-                logger.warning(f"Part {i+1} still too big — skipping")
-                part_path.unlink(missing_ok=True)
-                continue
-
-            parts.append(part_path)
-        except Exception as e:
-            logger.error(f"Split failed for part {i+1}: {e}")
-            if part_path.exists():
-                part_path.unlink(missing_ok=True)
-
-    input_path.unlink(missing_ok=True)  # Удаляем оригинал
-    return parts
-
 async def main():
     # Удаляем старый вебхук и пропускаем накопившиеся обновления
     await bot.delete_webhook(drop_pending_updates=True)
@@ -354,7 +344,6 @@ async def main():
     # allowed_updates больше не нужен — aiogram сам определяет нужные типы обновлений
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
     try:
         asyncio.run(main())
@@ -362,5 +351,3 @@ if __name__ == "__main__":
         logger.info("Бот остановлен пользователем (Ctrl+C)")
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске бота: {e}", exc_info=True)
-
-
